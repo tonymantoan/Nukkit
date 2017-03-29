@@ -29,7 +29,7 @@ public abstract class BaseInventory implements Inventory {
 
     protected final String title;
 
-    protected final Map<Integer, Item> slots = new HashMap<>();
+    public final Map<Integer, Item> slots = new HashMap<>();
 
     protected final Set<Player> viewers = new HashSet<>();
 
@@ -322,7 +322,7 @@ public abstract class BaseInventory implements Inventory {
             }
         }
 
-        for (int i = 0; i < this.getSize(); ++i) {
+        for (int i = 0; i < this.size; ++i) {
             Item item = this.getItem(i);
             if (item.getId() == Item.AIR || item.getCount() <= 0) {
                 continue;

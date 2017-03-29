@@ -1,5 +1,7 @@
 package cn.nukkit.level.generator.biome;
 
+import cn.nukkit.level.generator.Normal;
+import cn.nukkit.level.generator.biome.Biome;
 import cn.nukkit.level.generator.noise.Simplex;
 import cn.nukkit.math.NukkitRandom;
 
@@ -32,38 +34,34 @@ public class BiomeSelector {
             if (temperature < 0.25) {
                 return Biome.ICE_PLAINS;
             } else if (temperature < 0.75) {
-                return Biome.PLAINS;
-            } else {
                 return Biome.DESERT;
+            } else {
+                return Biome.SAVANNA;
             }
         } else if (rainfall < 0.80) {
             if (temperature < 0.25) {
                 return Biome.TAIGA;
-            } else if (temperature < 0.75) {
-                return Biome.FOREST;
             } else {
-                return Biome.BIRCH_FOREST;
+                return Biome.FOREST;
             }
         } else {
-            if (temperature < 0.25) {
-                return Biome.MOUNTAINS;
-            } else {
-                return Biome.SMALL_MOUNTAINS;
+            if (rainfall < 1.0) {
+                return Biome.JUNGLE;
             }
         }
+        return Biome.PLAINS;
     }
-
     public void recalculate() {
         this.map = new int[64 * 64];
-        for (int i = 0; i < 64; ++i) {
-            for (int j = 0; j < 64; ++j) {
+        for(int i = 0; i < 64; ++i) {
+            for(int j = 0; j < 64; ++j) {
                 this.map[i + (j << 6)] = this.lookup(i / 63d, j / 63d);
             }
         }
     }
 
     public void addBiome(Biome biome) {
-        this.biomes.put(biome.getId(), biome);
+        this.biomes.put(Integer.valueOf(biome.getId()), biome);
     }
 
     public double getTemperature(double x, double z) {

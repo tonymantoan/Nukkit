@@ -49,15 +49,18 @@ import cn.nukkit.potion.Effect;
 import cn.nukkit.redstone.Redstone;
 import cn.nukkit.scheduler.AsyncTask;
 import cn.nukkit.timings.LevelTimings;
-import cn.nukkit.timings.Timings;
-import cn.nukkit.timings.TimingsHistory;
 import cn.nukkit.utils.*;
+import co.aikar.timings.Timings;
+import co.aikar.timings.TimingsHistory;
+import com.google.common.cache.CacheBuilder;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.ref.SoftReference;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * author: MagicDroidX Nukkit Project
@@ -91,7 +94,6 @@ public class Level implements ChunkManager, Metadatable {
 
     private Map<Long, Map<Long, SetEntityMotionPacket>> motionToSend = new HashMap<>();
     private Map<Long, Map<Long, MoveEntityPacket>> moveToSend = new HashMap<>();
-    private Map<Long, Map<Long, MovePlayerPacket>> playerMoveToSend = new HashMap<>();
 
     private final Map<Long, Player> players = new HashMap<>();
 
@@ -102,10 +104,16 @@ public class Level implements ChunkManager, Metadatable {
     public final Map<Long, BlockEntity> updateBlockEntities = new HashMap<>();
 
     // Use a weak map to avoid OOM
-    private final Map<BlockVector3, Block> blockCache = new WeakHashMap<>();
+    private final ConcurrentMap<Object, Object> blockCache = CacheBuilder.newBuilder()
+            .maximumSize(1000)
+            .expireAfterWrite(10, TimeUnit.MINUTES)
+            .build().asMap();
 
     // Use a weak map to avoid OOM
-    private final Map<Long, DataPacket> chunkCache = new WeakHashMap<>();
+    private final ConcurrentMap<Object, Object> chunkCache = CacheBuilder.newBuilder()
+            .maximumSize(1000)
+            .expireAfterWrite(10, TimeUnit.MINUTES)
+            .build().asMap();
 
     private boolean cacheChunks = false;
 
@@ -203,6 +211,7 @@ public class Level implements ChunkManager, Metadatable {
             put(Block.SUGARCANE_BLOCK, BlockSugarcane.class);
             put(Block.RED_MUSHROOM, BlockMushroomRed.class);
             put(Block.BROWN_MUSHROOM, BlockMushroomBrown.class);
+            put(Block.NETHER_WART_BLOCK, BlockNetherWart.class);
 
             put(Block.FIRE, BlockFire.class);
             put(Block.GLOWING_REDSTONE_ORE, BlockOreRedstoneGlowing.class);
@@ -827,15 +836,6 @@ public class Level implements ChunkManager, Metadatable {
         }
         this.motionToSend.clear();
 
-        for (long index : this.playerMoveToSend.keySet()) {
-            int chunkX = getHashX(index);
-            int chunkZ = getHashZ(index);
-            for (MovePlayerPacket packet : this.playerMoveToSend.get(index).values()) {
-                this.addChunkPacket(chunkX, chunkZ, packet);
-            }
-        }
-        this.playerMoveToSend.clear();
-
         for (long index : this.chunkPackets.keySet()) {
             int chunkX = Level.getHashX(index);
             int chunkZ = Level.getHashZ(index);
@@ -1380,7 +1380,7 @@ public class Level implements ChunkManager, Metadatable {
         Block block;
         BaseFullChunk chunk;
 
-        if (cached && (block = this.blockCache.get(index)) != null) {
+        if (cached && (block = (Block) this.blockCache.get(index)) != null) {
             return block;
         } else if (pos.y >= 0 && pos.y < 256 && (chunk = this.chunks.get(chunkIndex)) != null) {
             fullState = chunk.getFullBlock((int) pos.x & 0x0f, (int) pos.y & 0xff,
@@ -1630,6 +1630,7 @@ public class Level implements ChunkManager, Metadatable {
 
                             .putShort("Health", 5).putCompound("Item", itemTag).putShort("PickupDelay", delay));
 
+            itemEntity.setPickupDelay(delay); //TODO: fix this
             itemEntity.spawnToAll();
         }
     }
@@ -1958,7 +1959,7 @@ public class Level implements ChunkManager, Metadatable {
         }
 
         if (player != null) {
-            BlockPlaceSound sound = new BlockPlaceSound(block.add(0.5, 0.5, 0.5));
+            BlockPlaceSound sound = new BlockPlaceSound(block.add(0.5, 0.5, 0.5), item.getId());
             Map<Integer, Player> players = getChunkPlayers((int) block.x >> 4, (int) block.z >> 4);
             addSound(sound, players.values());
 
@@ -2315,7 +2316,7 @@ public class Level implements ChunkManager, Metadatable {
         if (this.chunkSendTasks.containsKey(index)) {
             for (Player player : this.chunkSendQueue.get(index).values()) {
                 if (player.isConnected() && player.usedChunks.containsKey(index)) {
-                    player.sendChunk(x, z, this.chunkCache.get(index));
+                    player.sendChunk(x, z, (DataPacket) this.chunkCache.get(index));
                 }
             }
 
@@ -2848,25 +2849,6 @@ public class Level implements ChunkManager, Metadatable {
         pk.headYaw = (float) yaw;
         pk.pitch = (float) pitch;
         this.moveToSend.get(index).put(entityId, pk);
-    }
-
-    public void addPlayerMovement(int chunkX, int chunkZ, long entityId, double x, double y, double z, double yaw,
-                                  double pitch, boolean onGround) {
-        Long index = Level.chunkHash(chunkX, chunkZ);
-        if (!this.playerMoveToSend.containsKey(index)) {
-            this.playerMoveToSend.put(index, new HashMap<>());
-        }
-
-        MovePlayerPacket pk = new MovePlayerPacket();
-        pk.eid = entityId;
-        pk.x = (float) x;
-        pk.y = (float) y;
-        pk.z = (float) z;
-        pk.yaw = (float) yaw;
-        pk.headYaw = (float) yaw;
-        pk.pitch = (float) pitch;
-        pk.onGround = onGround;
-        this.playerMoveToSend.get(index).put(entityId, pk);
     }
 
     public boolean isRaining() {

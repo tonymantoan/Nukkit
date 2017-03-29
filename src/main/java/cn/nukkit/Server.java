@@ -65,10 +65,12 @@ import cn.nukkit.plugin.service.NKServiceManager;
 import cn.nukkit.plugin.service.ServiceManager;
 import cn.nukkit.potion.Effect;
 import cn.nukkit.potion.Potion;
+import cn.nukkit.resourcepacks.ResourcePackManager;
 import cn.nukkit.scheduler.FileWriteTask;
 import cn.nukkit.scheduler.ServerScheduler;
-import cn.nukkit.timings.Timings;
 import cn.nukkit.utils.*;
+import co.aikar.timings.Timings;
+import com.google.common.base.Preconditions;
 
 import java.io.*;
 import java.nio.ByteOrder;
@@ -126,6 +128,8 @@ public class Server {
     private SimpleCommandMap commandMap;
 
     private CraftingManager craftingManager;
+
+    private ResourcePackManager resourcePackManager;
 
     private ConsoleCommandSender consoleSender;
 
@@ -186,7 +190,11 @@ public class Server {
 
     private Level defaultLevel = null;
 
-    public Server(MainLogger logger, final String filePath, String dataPath, String pluginPath) {
+    private Thread currentThread;
+    
+    Server(MainLogger logger, final String filePath, String dataPath, String pluginPath) {
+        Preconditions.checkState(instance == null, "Already initialized!");
+        currentThread = Thread.currentThread(); // Saves the current thread instance as a reference, used in Server#isPrimaryThread()
         instance = this;
         this.logger = logger;
 
@@ -256,6 +264,7 @@ public class Server {
                 put("server-ip", "0.0.0.0");
                 put("view-distance", 10);
                 put("white-list", false);
+                put("achievements", true);
                 put("announce-player-achievements", true);
                 put("spawn-protection", 16);
                 put("max-players", 20);
@@ -275,6 +284,7 @@ public class Server {
                 put("enable-rcon", false);
                 put("rcon.password", Base64.getEncoder().encodeToString(UUID.randomUUID().toString().replace("-", "").getBytes()).substring(3, 13));
                 put("auto-save", true);
+                put("force-resources", false);
             }
         });
 
@@ -371,6 +381,7 @@ public class Server {
         Attribute.init();
 
         this.craftingManager = new CraftingManager();
+        this.resourcePackManager = new ResourcePackManager(new File(Nukkit.DATA_PATH, "resource_packs"));
 
         this.pluginManager = new PluginManager(this, this.commandMap);
         this.pluginManager.subscribeToPermission(Server.BROADCAST_CHANNEL_ADMINISTRATIVE, this.consoleSender);
@@ -607,7 +618,7 @@ public class Server {
     }
 
     public void enablePlugins(PluginLoadOrder type) {
-        for (Plugin plugin : this.pluginManager.getPlugins().values()) {
+        for (Plugin plugin : new ArrayList<>(this.pluginManager.getPlugins().values())) {
             if (!plugin.isEnabled() && type == plugin.getDescription().getOrder()) {
                 this.enablePlugin(plugin);
             }
@@ -628,6 +639,12 @@ public class Server {
     }
 
     public boolean dispatchCommand(CommandSender sender, String commandLine) throws ServerException {
+        // First we need to check if this command is on the main thread or not, if not, warn the user
+        if (!this.isPrimaryThread()) {
+            getLogger().warning("Command Dispatched Async: " + commandLine);
+            getLogger().warning("Please notify author of plugin causing this execution to fix this bug!", new Throwable());
+            // TODO: We should sync the command to the main thread too!
+        }
         if (sender == null) {
             throw new ServerException("CommandSender is not valid");
         }
@@ -789,14 +806,15 @@ public class Server {
             while (this.isRunning) {
                 try {
                     this.tick();
+
+                    long next = this.nextTick;
+                    long current = System.currentTimeMillis();
+
+                    if (next - 0.1 > current) {
+                        Thread.sleep(next - current - 1, 900000);
+                    }
                 } catch (RuntimeException e) {
                     this.getLogger().logException(e);
-                }
-
-                try {
-                    Thread.sleep(1);
-                } catch (InterruptedException e) {
-                    Server.getInstance().getLogger().logException(e);
                 }
             }
         } catch (Throwable e) {
@@ -905,9 +923,13 @@ public class Server {
 
     private void checkTickUpdates(int currentTick, long tickTime) {
         for (Player p : new ArrayList<>(this.players.values())) {
-            if (!p.loggedIn && (tickTime - p.creationTime) >= 10000 && p.kick(PlayerKickEvent.Reason.LOGIN_TIMEOUT, "Login timeout")) {
+            /*if (!p.loggedIn && (tickTime - p.creationTime) >= 10000 && p.kick(PlayerKickEvent.Reason.LOGIN_TIMEOUT, "Login timeout")) {
                 continue;
             }
+
+            client freezes when applying resource packs
+            todo: fix*/
+
             if (this.alwaysTickPlayers) {
                 p.onUpdate(currentTick);
             }
@@ -1070,8 +1092,9 @@ public class Server {
         return true;
     }
 
+    // TODO: Fix title tick
     public void titleTick() {
-        if (!Nukkit.ANSI) {
+        if (true || !Nukkit.ANSI) {
             return;
         }
 
@@ -1215,6 +1238,7 @@ public class Server {
 
             case "3":
             case "spectator":
+            case "spc":
             case "view":
             case "v":
                 return Player.SPECTATOR;
@@ -1278,6 +1302,10 @@ public class Server {
         return this.getPropertyString("motd", "Nukkit Server For Minecraft: PE");
     }
 
+    public boolean getForceResources() {
+        return this.getPropertyBoolean("force-resources", false);
+    }
+
     public MainLogger getLogger() {
         return this.logger;
     }
@@ -1300,6 +1328,10 @@ public class Server {
 
     public CraftingManager getCraftingManager() {
         return craftingManager;
+    }
+
+    public ResourcePackManager getResourcePackManager() {
+        return resourcePackManager;
     }
 
     public ServerScheduler getScheduler() {
@@ -1547,7 +1579,13 @@ public class Server {
             return false;
         }
 
-        String path = this.getDataPath() + "worlds/" + name + "/";
+        String path;
+
+        if (name.contains("/") || name.contains("\\")) {
+            path = name;
+        } else {
+            path = this.getDataPath() + "worlds/" + name + "/";
+        }
 
         Class<? extends LevelProvider> provider = LevelProviderManager.getProvider(path);
 
@@ -1613,10 +1651,16 @@ public class Server {
             }
         }
 
+        String path;
+
+        if (name.contains("/") || name.contains("\\")) {
+            path = name;
+        } else {
+            path = this.getDataPath() + "worlds/" + name + "/";
+        }
+
         Level level;
         try {
-            String path = this.getDataPath() + "worlds/" + name + "/";
-
             provider.getMethod("generate", String.class, String.class, long.class, Class.class, Map.class).invoke(null, path, name, seed, generator, options);
 
             level = new Level(this, name, path, provider);
@@ -1866,9 +1910,19 @@ public class Server {
     }
 
     public boolean shouldSavePlayerData() {
-        return this.getPropertyBoolean("player.save-player-data", true);
+        return (Boolean) this.getConfig("player.save-player-data", true);
     }
 
+    /**
+     * Checks the current thread against the expected primary thread for the server.
+     * 
+     * <b>Note:</b> this method should not be used to indicate the current synchronized state of the runtime. A current thread matching the main thread indicates that it is synchronized, but a mismatch does not preclude the same assumption.
+     * @return true if the current thread matches the expected primary thread, false otherwise
+     */
+    public boolean isPrimaryThread() {
+        return (Thread.currentThread() == currentThread);
+    }
+    
     private void registerEntities() {
         Entity.registerEntity("Arrow", EntityArrow.class);
         Entity.registerEntity("Item", EntityItem.class);
