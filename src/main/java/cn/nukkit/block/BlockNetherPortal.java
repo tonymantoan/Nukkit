@@ -1,8 +1,8 @@
 package cn.nukkit.block;
 
-import cn.nukkit.entity.Entity;
-import cn.nukkit.event.entity.EntityPortalEnterEvent;
 import cn.nukkit.item.Item;
+import cn.nukkit.math.AxisAlignedBB;
+import cn.nukkit.math.BlockFace;
 import cn.nukkit.utils.BlockColor;
 
 /**
@@ -53,8 +53,8 @@ public class BlockNetherPortal extends BlockFlowable {
     @Override
     public boolean onBreak(Item item) {
         boolean result = super.onBreak(item);
-        for (int side = 0; side <= 5; side++) {
-            Block b = this.getSide(side);
+        for (BlockFace face : BlockFace.values()) {
+            Block b = this.getSide(face);
             if (b != null) {
                 if (b instanceof BlockNetherPortal) {
                     result &= b.onBreak(item);
@@ -74,4 +74,25 @@ public class BlockNetherPortal extends BlockFlowable {
         return BlockColor.AIR_BLOCK_COLOR;
     }
 
+    @Override
+    public boolean canBePushed() {
+        return false;
+    }
+
+    @Override
+    public boolean canHarvestWithHand() {
+        return false;
+    }
+
+    @Override
+    protected AxisAlignedBB recalculateBoundingBox() {
+        return new AxisAlignedBB(
+                this.x,
+                this.y,
+                this.z,
+                this.x + 1,
+                this.y + 1,
+                this.z + 1
+        );
+    }
 }

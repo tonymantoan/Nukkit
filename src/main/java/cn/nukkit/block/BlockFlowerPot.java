@@ -4,8 +4,9 @@ import cn.nukkit.Player;
 import cn.nukkit.blockentity.BlockEntity;
 import cn.nukkit.blockentity.BlockEntityFlowerPot;
 import cn.nukkit.item.Item;
+import cn.nukkit.item.ItemFlowerPot;
 import cn.nukkit.math.AxisAlignedBB;
-import cn.nukkit.math.Vector3;
+import cn.nukkit.math.BlockFace;
 import cn.nukkit.nbt.tag.CompoundTag;
 import cn.nukkit.nbt.tag.Tag;
 
@@ -62,8 +63,8 @@ public class BlockFlowerPot extends BlockFlowable {
     }
 
     @Override
-    public boolean place(Item item, Block block, Block target, int face, double fx, double fy, double fz, Player player) {
-        if (face != Vector3.SIDE_UP) return false;
+    public boolean place(Item item, Block block, Block target, BlockFace face, double fx, double fy, double fz, Player player) {
+        if (face != BlockFace.UP) return false;
         CompoundTag nbt = new CompoundTag()
                 .putString("id", BlockEntity.FLOWER_POT)
                 .putInt("x", (int) this.x)
@@ -124,7 +125,7 @@ public class BlockFlowerPot extends BlockFlowable {
     }
 
     @Override
-    public int[][] getDrops(Item item) {
+    public Item[] getDrops(Item item) {
         boolean dropInside = false;
         int insideID = 0;
         int insideMeta = 0;
@@ -136,13 +137,13 @@ public class BlockFlowerPot extends BlockFlowable {
         }
 
         if (dropInside) {
-            return new int[][]{
-                    {Item.FLOWER_POT, 0, 1},
-                    {insideID, insideMeta, 1}
+            return new Item[]{
+                    new ItemFlowerPot(),
+                    Item.get(insideID, insideMeta, 1)
             };
         } else {
-            return new int[][]{
-                    {Item.FLOWER_POT, 0, 1}
+            return new Item[]{
+                    new ItemFlowerPot()
             };
         }
     }

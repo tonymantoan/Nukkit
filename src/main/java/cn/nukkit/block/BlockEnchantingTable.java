@@ -6,6 +6,7 @@ import cn.nukkit.blockentity.BlockEntityEnchantTable;
 import cn.nukkit.inventory.EnchantInventory;
 import cn.nukkit.item.Item;
 import cn.nukkit.item.ItemTool;
+import cn.nukkit.math.BlockFace;
 import cn.nukkit.nbt.tag.CompoundTag;
 import cn.nukkit.nbt.tag.ListTag;
 import cn.nukkit.nbt.tag.StringTag;
@@ -62,18 +63,18 @@ public class BlockEnchantingTable extends BlockTransparent {
     }
 
     @Override
-    public int[][] getDrops(Item item) {
+    public Item[] getDrops(Item item) {
         if (item.isPickaxe() && item.getTier() >= ItemTool.TIER_WOODEN) {
-            return new int[][]{
-                    {Item.ENCHANTING_TABLE, 0, 1}
+            return new Item[]{
+                    toItem()
             };
         } else {
-            return new int[0][0];
+            return new Item[0];
         }
     }
 
     @Override
-    public boolean place(Item item, Block block, Block target, int face, double fx, double fy, double fz, Player player) {
+    public boolean place(Item item, Block block, Block target, BlockFace face, double fx, double fy, double fz, Player player) {
         this.getLevel().setBlock(block, this, true, true);
 
         CompoundTag nbt = new CompoundTag()
@@ -125,5 +126,10 @@ public class BlockEnchantingTable extends BlockTransparent {
         }
 
         return true;
+    }
+
+    @Override
+    public boolean canHarvestWithHand() {
+        return false;
     }
 }
